@@ -2,6 +2,7 @@ import socket
 import time
 import random
 import json
+from constants import *
 
 class Cliente:
     def __init__(self,host, port, id=1) -> None:
@@ -19,7 +20,7 @@ class Cliente:
 
     def esperar_resposta(self, connection):
         # Esperando a resposta do nó e exibindo-a
-        resposta = connection.recv(1024).decode()
+        resposta = connection.recv(BUFFER_SIZE).decode()
         resposta = json.loads(resposta)
         print(resposta)
 
