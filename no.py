@@ -162,3 +162,4 @@ if __name__ == "__main__":
     time.sleep(2)
     # Executa o loop principal do no
     no.executar_no()
+    
