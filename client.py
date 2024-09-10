@@ -38,9 +38,17 @@ class Cliente:
 
 
 if __name__ == "__main__":
+    import sys
+    if len(sys.argv) != 3:
+        print("Uso: python3 client.py <host> <porta_no>")
+        sys.exit(1)
+
+    host = sys.argv[1]
+    porta_no = int(sys.argv[2])
+    
     cliente = Cliente(
-        host = '127.0.0.1',
-        porta = 12345 
+        host = host,
+        porta = porta_no
     )
 
     cliente()
