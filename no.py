@@ -122,6 +122,8 @@ class No:
 
     def executar_no(self):
         self.bind_para_no_anterior()
+        # Garantindo que o nó anterior já realizou o bind e eu consigo conectar, uma vez que o compose nao garante a inicializacao sequencial
+        time.sleep(2 + self.id_no)
         self.conectar_ao_no_seguinte()
 
         # O primeiro no inicia o processo de escrever no vetor (token) vazio do anel e passar ao proximo no
@@ -158,8 +160,6 @@ if __name__ == "__main__":
     # Inicia a thread para escutar o cliente
     threading.Thread(target=no.escutar_cliente, daemon=True).start()
     
-    input("Pressione Enter quando todos os nós estiverem ligados")
-    time.sleep(2)
     # Executa o loop principal do no
     no.executar_no()
     
