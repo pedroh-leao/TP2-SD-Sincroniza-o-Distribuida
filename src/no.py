@@ -4,6 +4,9 @@ import random
 import json
 import threading
 from constants import *
+import sys
+
+maximo_inteiro = sys.maxsize
 
 class No:
     def __init__(self, id_no, num_de_nos, host, porta_cliente, porta_no_atual, proximo_host, proxima_porta_no) -> None:
@@ -96,14 +99,12 @@ class No:
 
     # Verifica se pode ou nao acessar a regiao critica
     def verificar_regiao_critica(self):
-        # Filtrando todos os tokens que nao sao validos
-        filtro = lambda x: x is not None
-        vetor_token = list(filter(filtro, self.token))
-        if len(vetor_token) == 0:
-            return False
-        # Verificando se o timestamp do cliente é o menor
-        menor_timestamp = min(vetor_token)
-        return self.timestamp_cliente == menor_timestamp
+        tokens_copia = [x if x is not None else maximo_inteiro for x in self.token]
+
+        menor_timestamp = min(tokens_copia)
+
+        return self.timestamp_cliente == menor_timestamp and menor_timestamp != maximo_inteiro
+
 
     # Entra na regiao critica e executa o que deve executar. No caso, um sleep
     def entrar_regiao_critica(self):
