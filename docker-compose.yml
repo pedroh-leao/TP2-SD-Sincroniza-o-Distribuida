@@ -7,7 +7,7 @@ services:
 
   client0:
     image: anel_em:0.1
-    command: python3 -u client.py no0 5000
+    command: python3 -u client.py 0 no0 5000
     depends_on:
       - no0
     networks:
@@ -23,7 +23,7 @@ services:
 
   client1:
     image: anel_em:0.1
-    command: python3 -u client.py no1 5001
+    command: python3 -u client.py 1 no1 5001
     depends_on:
       - no1
     networks:
@@ -39,7 +39,7 @@ services:
 
   client2:
     image: anel_em:0.1
-    command: python3 -u client.py no2 5002
+    command: python3 -u client.py 2 no2 5002
     depends_on:
       - no2
     networks:
@@ -55,7 +55,7 @@ services:
 
   client3:
     image: anel_em:0.1
-    command: python3 -u client.py no3 5003
+    command: python3 -u client.py 3 no3 5003
     depends_on:
       - no3
     networks:
@@ -71,7 +71,7 @@ services:
 
   client4:
     image: anel_em:0.1
-    command: python3 -u client.py no4 5004
+    command: python3 -u client.py 4 no4 5004
     depends_on:
       - no4
     networks:

@@ -123,7 +123,7 @@ class No:
     def executar_no(self):
         self.bind_para_no_anterior()
         # Garantindo que o nó anterior já realizou o bind e eu consigo conectar, uma vez que o compose nao garante a inicializacao sequencial
-        time.sleep(2 + self.id_no)
+        time.sleep(2)
         self.conectar_ao_no_seguinte()
 
         # O primeiro no inicia o processo de escrever no vetor (token) vazio do anel e passar ao proximo no

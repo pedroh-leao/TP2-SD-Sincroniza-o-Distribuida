@@ -9,7 +9,4 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Copiar os arquivos no.py, client.py e constants.py para o container
-COPY no.py /app/no.py
-COPY client.py /app/client.py
-COPY constants.py /app/constants.py
-
+COPY src/ /app/

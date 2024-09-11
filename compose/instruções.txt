@@ -1,0 +1,8 @@
+Build da imagem
+docker build -t anel_em:0.1 .
+
+Execucao do anel
+docker-compose -f nos-compose.yml up
+
+Execucao dos clientes
+docker-compose -f clientes-compose.yml up
