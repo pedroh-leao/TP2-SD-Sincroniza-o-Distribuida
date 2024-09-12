@@ -75,7 +75,7 @@ class No:
     def escrever_no_token(self):
         self.token[self.id_no] = self.timestamp_cliente
         # Exibindo na tela caso o novo valor para exibir seja diferente do anterior
-        exibir = f"Nó {self.id_no} escreveu no vetor: {self.token}"
+        exibir = f"Nó {self.id_no} - Estado atual do vetor de tokens: {self.token}"
         if exibir != self.print_na_tela: 
             print(exibir)
             self.print_na_tela = exibir
