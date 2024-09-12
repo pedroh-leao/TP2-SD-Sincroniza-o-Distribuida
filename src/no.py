@@ -130,19 +130,22 @@ class No:
         self.conectar_ao_no_seguinte()
 
         # O primeiro no inicia o processo de escrever no vetor (token) vazio do anel e passar ao proximo no
-        if self.id_no != 0:
-            self.esperar_token()  # Espera o vetor (token) do no anterior
-            
-        self.escrever_no_token()  # Escreve no vetor
-        self.enviar_para_proximo(self.token)
+        if self.id_no == 0:
+            self.escrever_no_token() # Escreve no vetor
+            self.enviar_para_proximo(self.token)
 
         while True:
-            self.esperar_token()  # Espera o vetor (token) do no anterior
-            self.escrever_no_token()  # Escreve no vetor
+            self.esperar_token() # Espera o vetor (token) do no anterior
+
             if self.verificar_regiao_critica():
                 self.entrar_regiao_critica()
                 self.sair_da_regiao_critica()
-            self.enviar_para_proximo(self.token)  # Envia o vetor para o proximo no
+
+            else:
+                self.escrever_no_token() # Escreve no vetor
+            
+            self.enviar_para_proximo(self.token) # Envia o vetor para o proximo no
+
 
 if __name__ == "__main__":
     import sys
