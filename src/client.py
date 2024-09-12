@@ -16,6 +16,7 @@ class Cliente:
         timestamp = time.time()
         mensagem = {"timestamp": timestamp}
         mensagem = json.dumps(mensagem)
+        print(f"Cliente {self.id} enviando requisição para o nó com timestamp {timestamp}")
         connection.sendall(mensagem.encode())
 
     def esperar_resposta(self, connection):
@@ -26,6 +27,7 @@ class Cliente:
 
     def ficar_ocioso(self):
         tempo = random.uniform(1, 5)
+        print(f"Cliente {self.id} em espera por {tempo} segundos")
         time.sleep(tempo)
 
     def __call__(self):

@@ -1,30 +1,34 @@
 services:
   client0:
+    container_name: cliente_0
     image: anel_em:0.1
     command: python3 -u client.py 0 no0 5000
     networks:
       - ring_network
 
   client1:
+    container_name: cliente_1
     image: anel_em:0.1
     command: python3 -u client.py 1 no1 5001
     networks:
       - ring_network
 
   client2:
+    container_name: cliente_2
     image: anel_em:0.1
     command: python3 -u client.py 2 no2 5002
     networks:
       - ring_network
 
   client3:
+    container_name: cliente_3
     image: anel_em:0.1
     command: python3 -u client.py 3 no3 5003
-
     networks:
       - ring_network
 
   client4:
+    container_name: cliente_4
     image: anel_em:0.1
     command: python3 -u client.py 4 no4 5004
     networks:

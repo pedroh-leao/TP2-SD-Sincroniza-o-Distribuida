@@ -52,7 +52,9 @@ class No:
                 if not dados:
                     break
                 mensagem = json.loads(dados.decode())
-                self.timestamp_cliente = mensagem.get('timestamp')
+                timestamp = mensagem.get('timestamp')
+                #print(f"Nó {self.id_no} recebeu request do cliente com timestamp {timestamp}")
+                self.timestamp_cliente = timestamp
 
                 self.esperar_resposta.wait() # Bloqueando a thread, esperando o no sair da regiao critica
 
