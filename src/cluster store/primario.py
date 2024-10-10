@@ -9,9 +9,7 @@ import sys
 maximo_inteiro = sys.maxsize
 
 class No:
-    incremento_proxima_proxima = 1000
-
-    def __init__(self, id_no, num_de_nos, host, porta_cliente, porta_no_atual, proximo_host, proxima_porta_no, proximo_proximo_host) -> None:
+    def __init__(self, id_no, num_de_nos, host, porta_cliente, porta_no_atual, proximo_host, proxima_porta_no) -> None:
         self.id_no = id_no
         self.num_de_nos = num_de_nos
         self.host = host
@@ -19,31 +17,22 @@ class No:
         self.porta_no_atual = porta_no_atual # Porta com a qual o no anterior vai se conectar
         self.proximo_host = proximo_host
         self.proxima_porta_no = proxima_porta_no
-        self.proximo_proximo_host = proximo_proximo_host
 
         self.timestamp_cliente = None
         self.token = [None] * num_de_nos  # Inicializa o vetor vazio
 
         self.clienteConectado = False # Flag para sabermos se tem um cliente coonectado a esse no
-        
+        self.noAnteriorConectado = False # Flag para sabermos se o no anterior esta conectado
+
         # Iniciando sockets para a comunicacao com o cliente, o no anterior e o proximo no
         self.cliente_socket     = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Escuta e fala
         self.no_anterior_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Somente escuta
-        self.no_proximo_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Somente fala
+        self.no_seguinte_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Somente fala
 
         self.esperar_resposta = threading.Event()
         self.mutex = threading.Lock()
         
         self.print_na_tela = ""
-
-        # Tolerancia a falha
-        self.no_proximo_proximo_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.no_anterior_anterior_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        
-        self.no_anterior_conectado = False
-        self.no_anterior_anterior_conectado = False
-        self.no_proximo_conectado = False
-        self.no_proximo_proximo_conectado = False
 
     # Roda em uma thread separada
     def escutar_cliente(self):
@@ -71,42 +60,16 @@ class No:
 
                 conn.sendall(json.dumps({"status": "commited"}).encode())                    
 
+    # Inicia a conexao com o no seguinte do anel
+    def conectar_ao_no_seguinte(self):
+        self.no_seguinte_socket.connect(
+            (self.proximo_host, self.proxima_porta_no)
+        )
+
     # Realiza o bind para permitir que o no anterior possa se conectar
     def bind_para_no_anterior(self):
         self.no_anterior_socket.bind((self.host, self.porta_no_atual))
         self.no_anterior_socket.listen()
-
-        self.no_anterior_anterior_socket.bind((self.host, self.porta_no_atual + No.incremento_proxima_proxima))
-        self.no_anterior_anterior_socket.listen()
-
-    # Inicia a conexao com o no proximo do anel
-    def conectar_ao_no_proximo(self):
-        sucesso_conexao = self.no_proximo_socket.connect_ex(
-            (self.proximo_host, self.proxima_porta_no)
-        )
-        self.no_proximo_conectado = (sucesso_conexao == 0)
-
-        sucesso_conexao = self.no_proximo_proximo_socket.connect_ex(
-            (self.proximo_host, self.proxima_porta_no + No.incremento_proxima_proxima)
-        )
-        self.no_proximo_proximo_conectado = (sucesso_conexao == 0)
-
-    def aceitar_conexoes_anterior(self):
-        self.conn_anterior, _ = self.no_anterior_socket.accept()
-        self.no_anterior_conectado = True
-
-    def aceitar_conexoes_anterior_anterior(self):
-        self.conn_anterior_anterior, _ = self.no_anterior_anterior_socket.accept()
-        self.no_anterior_anterior_conectado = True
-
-    def aceitar_conexoes(self):
-        anterior_th = threading.Thread(target=self.aceitar_conexoes_anterior)
-        anterior_th.start()
-        anterior_anterior_th = threading.Thread(target=self.aceitar_conexoes_anterior_anterior)
-        anterior_anterior_th.start()
-
-        anterior_th.join()
-        anterior_anterior_th.join()
 
     # Escreve no token o timestamp do cliente, caso tenha informacoes, ou nulo, caso contrario
     def escrever_no_token(self):
@@ -114,71 +77,26 @@ class No:
         # Exibindo na tela caso o novo valor para exibir seja diferente do anterior
         exibir = f"Nó {self.id_no} - Estado atual do vetor de tokens: {self.token}"
         if exibir != self.print_na_tela: 
-            #print(exibir)
+            print(exibir)
             self.print_na_tela = exibir
 
     # Envia o token para o proximo no do anel
     def enviar_para_proximo(self, vetor):
-        if self.no_proximo_conectado:
-            try:
-                self.no_proximo_socket.sendall(json.dumps(vetor).encode())
-            except (ConnectionResetError, ConnectionAbortedError):
-                self.no_proximo_conectado = False
-                self.token[(self.id_no + 1) % self.num_de_nos] = None
-
-        if self.no_proximo_proximo_conectado:
-            try:
-                self.no_proximo_proximo_socket.sendall(json.dumps(vetor).encode())
-            except (ConnectionResetError, ConnectionAbortedError):
-                self.no_proximo_proximo_conectado = False            
+        self.no_seguinte_socket.sendall(json.dumps(vetor).encode())
 
     # Fica esperando o no anterior enviar o token e atualiza o local com os novos valores
-    #def esperar_token_anterior(self):
+    def esperar_token(self):       
+        if not self.noAnteriorConectado:
+            self.conn_anterior, _ = self.no_anterior_socket.accept()
+            self.noAnteriorConectado = True
 
-    def esperar_token(self):   
-        token_anterior = None # token recebido do no anterior
-        token_anterior_anterior = None # "backup" do token recebido do no anterior do anterior, para caso o no anterior caia
-        def anterior():
-            nonlocal token_anterior
-            try:
-                dados = self.conn_anterior.recv(BUFFER_SIZE)
-                if dados:
-                    token_anterior = json.loads(dados.decode()) 
-            except socket.timeout:
-                self.no_anterior_conectado = False
-                token_anterior = None
-            except json.JSONDecodeError:
-                pass
-
-        def anterior_anterior():
-            nonlocal token_anterior_anterior
-            try:
-                dados = self.conn_anterior_anterior.recv(BUFFER_SIZE)
-                if dados:
-                    token_anterior_anterior = json.loads(dados.decode()) 
-            except socket.timeout:
-                self.no_anterior_anterior_conectado = False
-                token_anterior_anterior = None
-            except json.JSONDecodeError:
-                pass
-
-        threads = []
-        if self.no_anterior_conectado:
-            t = threading.Thread(target=anterior)
-            t.start()
-            threads.append(t)
-        if self.no_anterior_anterior_conectado:
-            t = threading.Thread(target=anterior_anterior)
-            t.start()
-            threads.append(t)
-
-        for t in threads:
-            t.join()
-
-        if token_anterior is not None:
-            self.token = token_anterior
-        elif token_anterior_anterior is not None:
-            self.token = token_anterior_anterior
+        try:
+            dados = self.conn_anterior.recv(BUFFER_SIZE)
+            if dados:
+                token = json.loads(dados.decode())
+                self.token = token
+        except OSError as e:
+            print(f"Erro ao receber dados: {e}")
 
 
     # Verifica se pode ou nao acessar a regiao critica
@@ -188,6 +106,7 @@ class No:
         menor_timestamp = min(tokens_copia)
 
         return self.timestamp_cliente == menor_timestamp and menor_timestamp != maximo_inteiro
+
 
     # Entra na regiao critica e executa o que deve executar. No caso, um sleep
     def entrar_regiao_critica(self):
@@ -208,8 +127,7 @@ class No:
         self.bind_para_no_anterior()
         # Garantindo que o nó anterior já realizou o bind e eu consigo conectar, uma vez que o compose nao garante a inicializacao sequencial
         time.sleep(2)
-        self.conectar_ao_no_proximo()
-        self.aceitar_conexoes()
+        self.conectar_ao_no_seguinte()
 
         # O primeiro no inicia o processo de escrever no vetor (token) vazio do anel e passar ao proximo no
         if self.id_no == 0:
@@ -231,7 +149,7 @@ class No:
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) != 9:
+    if len(sys.argv) != 8:
         print("Uso: python3 no.py <id_no> <num_de_nos> <host> <porta_cliente> <porta_no_atual> <proximo_host> <proximo_port>")
         sys.exit(1)
 
@@ -242,9 +160,8 @@ if __name__ == "__main__":
     porta_no_atual = int(sys.argv[5])  # Porta para comunicação entre nos
     proximo_host = sys.argv[6]
     proximo_port = int(sys.argv[7])
-    proximo_proximo_host = sys.argv[8]
 
-    no = No(id_no, num_de_nos, host, porta_cliente, porta_no_atual, proximo_host, proximo_port, proximo_proximo_host)
+    no = No(id_no, num_de_nos, host, porta_cliente, porta_no_atual, proximo_host, proximo_port)
     
     # Inicia a thread para escutar o cliente
     threading.Thread(target=no.escutar_cliente, daemon=True).start()
@@ -252,3 +169,17 @@ if __name__ == "__main__":
     # Executa o loop principal do no
     no.executar_no()
     
+
+
+
+
+
+
+
+# Logica: (lembrando que o no primario executa a atualizacao em sua copia local e envia a tualizacao para os nos de backup, os nos replica)
+
+# 1- o no primario estabele conexao com os nos replicas (de escuta e de envio)
+
+# 2- fica escutando para receber a requisicao de alguma atualizacao a ser feita em sua copia local
+
+# 3- envia a atualizacao para os nos de backup, para que seja atualizados neles tambem
