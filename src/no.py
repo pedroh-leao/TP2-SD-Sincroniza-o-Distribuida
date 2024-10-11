@@ -8,10 +8,16 @@ import sys
 
 maximo_inteiro = sys.maxsize
 
+class EsperaToken:
+    def __init__(self, conexao, anterior_conectado, token=None):
+        self.token = token
+        self.conexao = conexao
+        self.anterior_conectado = anterior_conectado
+
 class No:
     incremento_proxima_proxima = 1000
 
-    def __init__(self, id_no, num_de_nos, host, porta_cliente, porta_no_atual, proximo_host, proxima_porta_no, proximo_proximo_host) -> None:
+    def __init__(self, id_no, num_de_nos, host, porta_cliente, porta_no_atual, proximo_host, proxima_porta_no, proximo_proximo_host, queda) -> None:
         self.id_no = id_no
         self.num_de_nos = num_de_nos
         self.host = host
@@ -45,6 +51,22 @@ class No:
         self.no_proximo_conectado = False
         self.no_proximo_proximo_conectado = False
 
+        self.queda = queda
+
+    def encerrar_sockets(self):
+        self.cliente_socket.close()
+        self.no_anterior_socket.close()
+        self.no_proximo_socket.close()
+        self.no_proximo_proximo_socket.close()
+        self.no_anterior_anterior_socket.close()
+
+    def cair(self):
+        numero = random.randint(1, 100)
+        if numero > 50:
+            print("Derrubando no", self.id_no)
+            self.encerrar_sockets()
+            sys.exit(0)
+
     # Roda em uma thread separada
     def escutar_cliente(self):
         # Fazendo o binding
@@ -69,6 +91,7 @@ class No:
 
                 self.esperar_resposta.wait() # Bloqueando a thread, esperando o no sair da regiao critica
 
+                print("Enviando commit para o cliente")
                 conn.sendall(json.dumps({"status": "commited"}).encode())                    
 
     # Realiza o bind para permitir que o no anterior possa se conectar
@@ -119,66 +142,55 @@ class No:
 
     # Envia o token para o proximo no do anel
     def enviar_para_proximo(self, vetor):
+        mensagem = json.dumps(vetor).encode()
+        time.sleep(0.2)
         if self.no_proximo_conectado:
             try:
-                self.no_proximo_socket.sendall(json.dumps(vetor).encode())
-            except (ConnectionResetError, ConnectionAbortedError):
+                self.no_proximo_socket.sendall(mensagem)
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
                 self.no_proximo_conectado = False
                 self.token[(self.id_no + 1) % self.num_de_nos] = None
+                print("Não foi possivel mandar mensagem para o nó proximo")
 
         if self.no_proximo_proximo_conectado:
             try:
-                self.no_proximo_proximo_socket.sendall(json.dumps(vetor).encode())
-            except (ConnectionResetError, ConnectionAbortedError):
+                self.no_proximo_proximo_socket.sendall(mensagem)
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
                 self.no_proximo_proximo_conectado = False            
 
     # Fica esperando o no anterior enviar o token e atualiza o local com os novos valores
-    #def esperar_token_anterior(self):
+    def esperar_token_anterior(self, espera_token: EsperaToken):
+        dados = ''
+        while dados == '' and espera_token.anterior_conectado:
+            dados = espera_token.conexao.recv(BUFFER_SIZE)
+            if dados:
+                try:
+                    espera_token.token = json.loads(dados.decode())
+                except:
+                    espera_token.anterior_conectado = False
+                    espera_token.token = None
+                    print("Não foi possível receber", dados)
 
     def esperar_token(self):   
-        token_anterior = None # token recebido do no anterior
-        token_anterior_anterior = None # "backup" do token recebido do no anterior do anterior, para caso o no anterior caia
-        def anterior():
-            nonlocal token_anterior
-            try:
-                dados = self.conn_anterior.recv(BUFFER_SIZE)
-                if dados:
-                    token_anterior = json.loads(dados.decode()) 
-            except socket.timeout:
-                self.no_anterior_conectado = False
-                token_anterior = None
-            except json.JSONDecodeError:
-                pass
+        anterior = EsperaToken(self.conn_anterior, self.no_anterior_conectado)
+        anterior_anterior = EsperaToken(self.conn_anterior_anterior, self.no_anterior_anterior_conectado)
 
-        def anterior_anterior():
-            nonlocal token_anterior_anterior
-            try:
-                dados = self.conn_anterior_anterior.recv(BUFFER_SIZE)
-                if dados:
-                    token_anterior_anterior = json.loads(dados.decode()) 
-            except socket.timeout:
-                self.no_anterior_anterior_conectado = False
-                token_anterior_anterior = None
-            except json.JSONDecodeError:
-                pass
+        t_anterior = threading.Thread(target=self.esperar_token_anterior, args = (anterior,))
+        t_anterior_anterior = threading.Thread(target=self.esperar_token_anterior, args = (anterior_anterior,))
+        
+        t_anterior.start() 
+        t_anterior_anterior.start()
 
-        threads = []
-        if self.no_anterior_conectado:
-            t = threading.Thread(target=anterior)
-            t.start()
-            threads.append(t)
-        if self.no_anterior_anterior_conectado:
-            t = threading.Thread(target=anterior_anterior)
-            t.start()
-            threads.append(t)
+        t_anterior.join()
+        t_anterior_anterior.join()
 
-        for t in threads:
-            t.join()
+        if anterior.token is not None:
+            self.token = anterior.token
+        elif anterior_anterior.token is not None:
+            self.token = anterior_anterior.token
 
-        if token_anterior is not None:
-            self.token = token_anterior
-        elif token_anterior_anterior is not None:
-            self.token = token_anterior_anterior
+        self.no_anterior_conectado = anterior.anterior_conectado
+        self.no_anterior_anterior_conectado = anterior_anterior.anterior_conectado
 
 
     # Verifica se pode ou nao acessar a regiao critica
@@ -193,8 +205,9 @@ class No:
     def entrar_regiao_critica(self):
         print(f"Nó {self.id_no} entrando na seção crítica...")
         tempo = random.uniform(0.2, 1)
-        time.sleep(tempo)
-        print(f"Nó {self.id_no} saiu da seção crítica.")
+        time.sleep(tempo)        
+        if self.queda == 3:
+            self.cair()
 
     def sair_da_regiao_critica(self):
         self.token[self.id_no] = None  # Limpa a posicao do vetor apos sair da regiao critica
@@ -202,7 +215,10 @@ class No:
 
         with self.mutex:
             if self.clienteConectado == True:
+                print("\tLiberando o commit", self.esperar_resposta)
                 self.esperar_resposta.set()    # Desbloqueando a thread do cliente para enviar o commit 
+        
+        print(f"Nó {self.id_no} saiu da seção crítica.")
 
     def executar_no(self):
         self.bind_para_no_anterior()
@@ -230,10 +246,10 @@ class No:
 
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) != 9:
-        print("Uso: python3 no.py <id_no> <num_de_nos> <host> <porta_cliente> <porta_no_atual> <proximo_host> <proximo_port>")
-        sys.exit(1)
+    # import sys
+    # if len(sys.argv) != 9:
+    #     print("Uso: python3 no.py <id_no> <num_de_nos> <host> <porta_cliente> <porta_no_atual> <proximo_host> <proximo_port>")
+    #     sys.exit(1)
 
     id_no = int(sys.argv[1])
     num_de_nos = int(sys.argv[2])
@@ -243,8 +259,9 @@ if __name__ == "__main__":
     proximo_host = sys.argv[6]
     proximo_port = int(sys.argv[7])
     proximo_proximo_host = sys.argv[8]
+    queda = int(sys.argv[9]) if len(sys.argv) == 10 else -1
 
-    no = No(id_no, num_de_nos, host, porta_cliente, porta_no_atual, proximo_host, proximo_port, proximo_proximo_host)
+    no = No(id_no, num_de_nos, host, porta_cliente, porta_no_atual, proximo_host, proximo_port, proximo_proximo_host, queda)
     
     # Inicia a thread para escutar o cliente
     threading.Thread(target=no.escutar_cliente, daemon=True).start()

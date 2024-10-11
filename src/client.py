@@ -26,11 +26,15 @@ class Cliente:
 
     def esperar_resposta(self, connection):
         # Esperando a resposta do no e exibindo-a
+        resposta = ''
         try:
-            resposta = connection.recv(BUFFER_SIZE).decode()
-            if resposta:
-                resposta = json.loads(resposta)
-                print(f"Cliente {self.id} recebeu {resposta["status"]} do host {self.host}")
+            while resposta == '':
+                resposta = connection.recv(BUFFER_SIZE).decode()
+                if resposta:
+                    resposta = json.loads(resposta)
+                    print(f"Cliente {self.id} recebeu {resposta["status"]} do host {self.host}")
+
+
         except socket.timeout:
             print(f"Falha após o pedido do cliente {self.id} durante a espera de um retorno do host {self.host}. Desligando...")
             sys.exit()
@@ -42,7 +46,6 @@ class Cliente:
 
     def __call__(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
-            connection.settimeout(10)
             connection.connect((self.host, self.porta))
             for _ in range(self.num_requisicoes):
                 self.enviar_requisicao(connection)
