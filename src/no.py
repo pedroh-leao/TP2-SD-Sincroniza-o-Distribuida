@@ -77,7 +77,7 @@ class No:
         # Exibindo na tela caso o novo valor para exibir seja diferente do anterior
         exibir = f"Nó {self.id_no} - Estado atual do vetor de tokens: {self.token}"
         if exibir != self.print_na_tela: 
-            print(exibir)
+            # print(exibir)
             self.print_na_tela = exibir
 
     # Envia o token para o proximo no do anel
@@ -111,17 +111,16 @@ class No:
     # Entra na regiao critica e executa o que deve executar. No caso, um sleep
     def entrar_regiao_critica(self):
         print(f"Nó {self.id_no} entrando na seção crítica...")
-        tempo = random.uniform(0.2, 1)
+        tempo = random.uniform(0.2, 1) * 10 
         time.sleep(tempo)
-        print(f"Nó {self.id_no} saiu da seção crítica.")
-
-    def sair_da_regiao_critica(self):
+        
         self.token[self.id_no] = None  # Limpa a posicao do vetor apos sair da regiao critica
         self.timestamp_cliente = None  # Remove o timestamp do cliente
 
         with self.mutex:
             if self.clienteConectado == True:
                 self.esperar_resposta.set()    # Desbloqueando a thread do cliente para enviar o commit 
+        print(f"Nó {self.id_no} saiu da seção crítica.")
 
     def executar_no(self):
         self.bind_para_no_anterior()
@@ -139,7 +138,6 @@ class No:
 
             if self.verificar_regiao_critica():
                 self.entrar_regiao_critica()
-                self.sair_da_regiao_critica()
 
             else:
                 self.escrever_no_token() # Escreve no vetor
