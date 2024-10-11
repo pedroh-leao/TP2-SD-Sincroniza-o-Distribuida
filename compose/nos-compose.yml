@@ -1,7 +1,7 @@
 services:
   no0:
     image: anel_em:0.1
-    command: python3 -u no.py 0 5 no0 5000 6000 no1 6001 no2 3
+    command: python3 -u no.py 0 5 no0 5000 6000 no1 6001 no2
     networks:
       - ring_network
 
@@ -13,7 +13,7 @@ services:
 
   no2:
     image: anel_em:0.1
-    command: python3 -u no.py 2 5 no2 5002 6002 no3 6003 no4
+    command: python3 -u no.py 2 5 no2 5002 6002 no3 6003 no4 3
     networks:
       - ring_network
 

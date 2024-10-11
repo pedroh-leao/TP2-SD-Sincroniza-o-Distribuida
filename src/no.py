@@ -5,14 +5,16 @@ import json
 import threading
 from constants import *
 import sys
+import os
 
 maximo_inteiro = sys.maxsize
 
 class EsperaToken:
     def __init__(self, conexao, anterior_conectado, token=None):
         self.token = token
-        self.conexao = conexao
-        self.anterior_conectado = anterior_conectado
+        self.conexao = conexao # valor do conn obtido durante a conexao
+        self.anterior_conectado = anterior_conectado # flag para indicar se esta ou nao conectado
+        self.recebeu_resposta = False
 
 class No:
     incremento_proxima_proxima = 1000
@@ -37,7 +39,7 @@ class No:
         self.no_anterior_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Somente escuta
         self.no_proximo_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Somente fala
 
-        self.esperar_resposta = threading.Event()
+        self.esperar_resposta = threading.Condition()
         self.mutex = threading.Lock()
         
         self.print_na_tela = ""
@@ -62,10 +64,11 @@ class No:
 
     def cair(self):
         numero = random.randint(1, 100)
-        if numero > 50:
-            print("Derrubando no", self.id_no)
+        if numero > 40:
             self.encerrar_sockets()
-            sys.exit(0)
+            print("Derrubando no", self.id_no)
+            os._exit(0)
+            #sys.exit(1)
 
     # Roda em uma thread separada
     def escutar_cliente(self):
@@ -86,12 +89,14 @@ class No:
                     break
                 mensagem = json.loads(dados.decode())
                 timestamp = mensagem.get('timestamp')
-                #print(f"Nó {self.id_no} recebeu request do cliente com timestamp {timestamp}")
                 self.timestamp_cliente = timestamp
 
-                self.esperar_resposta.wait() # Bloqueando a thread, esperando o no sair da regiao critica
+                if self.timestamp_cliente != None and self.queda == 1:
+                    self.cair()
 
-                print("Enviando commit para o cliente")
+                with self.esperar_resposta:
+                    self.esperar_resposta.wait() # Bloqueando a thread, esperando o no sair da regiao critica
+
                 conn.sendall(json.dumps({"status": "commited"}).encode())                    
 
     # Realiza o bind para permitir que o no anterior possa se conectar
@@ -109,8 +114,9 @@ class No:
         )
         self.no_proximo_conectado = (sucesso_conexao == 0)
 
+        proxima_porta = (self.id_no + 2) % self.num_de_nos + 6000 + No.incremento_proxima_proxima
         sucesso_conexao = self.no_proximo_proximo_socket.connect_ex(
-            (self.proximo_host, self.proxima_porta_no + No.incremento_proxima_proxima)
+            (self.proximo_proximo_host,  proxima_porta)
         )
         self.no_proximo_proximo_conectado = (sucesso_conexao == 0)
 
@@ -128,8 +134,8 @@ class No:
         anterior_anterior_th = threading.Thread(target=self.aceitar_conexoes_anterior_anterior)
         anterior_anterior_th.start()
 
-        anterior_th.join()
-        anterior_anterior_th.join()
+        # anterior_th.join()
+        # anterior_anterior_th.join()
 
     # Escreve no token o timestamp do cliente, caso tenha informacoes, ou nulo, caso contrario
     def escrever_no_token(self):
@@ -141,65 +147,79 @@ class No:
             self.print_na_tela = exibir
 
     # Envia o token para o proximo no do anel
-    def enviar_para_proximo(self, vetor):
-        mensagem = json.dumps(vetor).encode()
-        time.sleep(0.2)
+    def enviar_para_proximo(self):
         if self.no_proximo_conectado:
             try:
-                self.no_proximo_socket.sendall(mensagem)
-            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+                self.no_proximo_socket.sendall(json.dumps(self.token).encode())
+            except:
                 self.no_proximo_conectado = False
                 self.token[(self.id_no + 1) % self.num_de_nos] = None
                 print("Não foi possivel mandar mensagem para o nó proximo")
 
         if self.no_proximo_proximo_conectado:
             try:
-                self.no_proximo_proximo_socket.sendall(mensagem)
-            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
-                self.no_proximo_proximo_conectado = False            
+                self.no_proximo_proximo_socket.sendall(json.dumps(self.token).encode())
+            except:
+                self.no_proximo_proximo_conectado = False 
+                print("Não foi possivel mandar mensagem para o nó proximo proximo")           
 
     # Fica esperando o no anterior enviar o token e atualiza o local com os novos valores
-    def esperar_token_anterior(self, espera_token: EsperaToken):
+    def esperar_token_anterior(self, espera: EsperaToken):
         dados = ''
-        while dados == '' and espera_token.anterior_conectado:
-            dados = espera_token.conexao.recv(BUFFER_SIZE)
-            if dados:
-                try:
-                    espera_token.token = json.loads(dados.decode())
-                except:
-                    espera_token.anterior_conectado = False
-                    espera_token.token = None
-                    print("Não foi possível receber", dados)
+        while espera.anterior_conectado: 
+            try:
+                # Aqui está o problema, deve-se tentar receber os dados diretamente
+                dados = espera.conexao.recv(BUFFER_SIZE)
+                if dados:
+                    espera.token = json.loads(dados.decode())
+                    espera.recebeu_resposta = True
+                    return
+            except:
+                break
+        espera.recebeu_resposta = False
+        espera.anterior_conectado = False
 
-    def esperar_token(self):   
+    def esperar_token(self):
         anterior = EsperaToken(self.conn_anterior, self.no_anterior_conectado)
         anterior_anterior = EsperaToken(self.conn_anterior_anterior, self.no_anterior_anterior_conectado)
 
-        t_anterior = threading.Thread(target=self.esperar_token_anterior, args = (anterior,))
-        t_anterior_anterior = threading.Thread(target=self.esperar_token_anterior, args = (anterior_anterior,))
+        t_anterior = threading.Thread(target=self.esperar_token_anterior, args=(anterior,))
+        t_anterior_anterior = threading.Thread(target=self.esperar_token_anterior, args=(anterior_anterior,))
         
-        t_anterior.start() 
+        t_anterior.start()
         t_anterior_anterior.start()
+        
+        t_anterior.join(2) 
+        t_anterior_anterior.join(2)
 
-        t_anterior.join()
-        t_anterior_anterior.join()
-
-        if anterior.token is not None:
-            self.token = anterior.token
-        elif anterior_anterior.token is not None:
-            self.token = anterior_anterior.token
-
+        # Atualiza as flags de conexão
         self.no_anterior_conectado = anterior.anterior_conectado
         self.no_anterior_anterior_conectado = anterior_anterior.anterior_conectado
 
+        # Verifica se recebeu o token do nó anterior
+        if anterior.recebeu_resposta:
+            self.token = anterior.token
+            #print(f"Token recebido do nó anterior {(self.id_no - 1) % self.num_de_nos} {anterior.token}")
 
+        elif anterior_anterior.recebeu_resposta:
+            self.token = anterior_anterior.token
+            self.token[(self.id_no - 1) % self.num_de_nos] = None
+            #print(f"Token recebido do nó anterior anterior {(self.id_no - 2) % self.num_de_nos}")
+
+        else:
+            print(f"Nenhuma mensagem recebida, nó {self.id_no} continua esperando ou reconfigurando fluxo.")
+            
     # Verifica se pode ou nao acessar a regiao critica
     def verificar_regiao_critica(self):
         tokens_copia = [x if x is not None else maximo_inteiro for x in self.token]
 
         menor_timestamp = min(tokens_copia)
 
-        return self.timestamp_cliente == menor_timestamp and menor_timestamp != maximo_inteiro
+        retorno = self.timestamp_cliente == menor_timestamp and menor_timestamp != maximo_inteiro
+
+        #print(retorno) 
+
+        return retorno
 
     # Entra na regiao critica e executa o que deve executar. No caso, um sleep
     def entrar_regiao_critica(self):
@@ -215,22 +235,22 @@ class No:
 
         with self.mutex:
             if self.clienteConectado == True:
-                print("\tLiberando o commit", self.esperar_resposta)
-                self.esperar_resposta.set()    # Desbloqueando a thread do cliente para enviar o commit 
+                with self.esperar_resposta:
+                    self.esperar_resposta.notify()    # Desbloqueando a thread do cliente para enviar o commit 
         
         print(f"Nó {self.id_no} saiu da seção crítica.")
 
     def executar_no(self):
         self.bind_para_no_anterior()
-        # Garantindo que o nó anterior já realizou o bind e eu consigo conectar, uma vez que o compose nao garante a inicializacao sequencial
-        time.sleep(2)
+        time.sleep(1)
+        threading.Thread(target=self.aceitar_conexoes).start()
         self.conectar_ao_no_proximo()
-        self.aceitar_conexoes()
+        time.sleep(1)
 
         # O primeiro no inicia o processo de escrever no vetor (token) vazio do anel e passar ao proximo no
         if self.id_no == 0:
             self.escrever_no_token() # Escreve no vetor
-            self.enviar_para_proximo(self.token)
+            self.enviar_para_proximo()
 
         while True:
             self.esperar_token() # Espera o vetor (token) do no anterior
@@ -242,7 +262,10 @@ class No:
             else:
                 self.escrever_no_token() # Escreve no vetor
             
-            self.enviar_para_proximo(self.token) # Envia o vetor para o proximo no
+            self.enviar_para_proximo() # Envia o vetor para o proximo no
+            
+            if self.queda == 2:
+                self.cair()
 
 
 if __name__ == "__main__":
