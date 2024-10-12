@@ -13,7 +13,7 @@ services:
 
   no2:
     image: anel_em:0.1
-    command: python3 -u no.py 2 5 no2 5002 6002 no3 6003 no4
+    command: python3 -u no.py 2 5 no2 5002 6002 no3 6003 no4 1
     networks:
       - ring_network
 

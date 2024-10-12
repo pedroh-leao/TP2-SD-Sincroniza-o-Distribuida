@@ -20,9 +20,6 @@
         # 3.2.4- retorna ao elemento do cluster sync um reconhecimento que a escrita foi concluida
 
 # 4- finaliza conexao com aquele elemento do cluster sync e fica escutando para receber alguma requisicao de outro elemento, retornando ao #2
-
-#! por fim, fazer alteracoes no codigo do cluster sync para acessar o cluster store ao entrar na regiao critica
-
 import threading
 import socket
 from constants import * 
@@ -55,6 +52,7 @@ class  noClusterStore:
         self.no_clusterSync_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         self.mutex = threading.Lock()
+        self.esperar_resposta = threading.Condition()
             
 
     def estabeleceConexoesDoCluster(self):
@@ -96,7 +94,7 @@ class  noClusterStore:
             with conn:
                 with self.mutex:
                     self.clienteConectado = True
-                    print(f"Nó {self.id} conectado com o elemento do cluster sync {addr}")
+                    print(f"Nó {addr} conectado com o elemento do cluster sync {self.id}")
 
                 
                 dados = conn.recv(BUFFER_SIZE)
@@ -109,13 +107,11 @@ class  noClusterStore:
                     # envia a requisicao de escrita para o no primario
                     self.no_primario_socket.sendall(json.dumps(mensagem).encode())
 
-                    # recebe do no primario atualizacao a ser feita
-                    atualizacao = self.no_primario_socket.recv(BUFFER_SIZE).decode()
-                    atualizacao = json.loads(atualizacao)
-                    
-                    self.noBackupExecutandoAtualizacao(atualizacao)
+                    with self.esperar_resposta:
+                        self.esperar_resposta.wait()
 
                 # retornando ao elemento do cluster sync um reconhecimento que a escrita foi concluida
+                print("Retornando ao cluster sync")
                 conn.sendall(json.dumps({"status": "escrita concluída"}).encode())
 
     # fica escutando os nos backup caso eu seja um no primario, para receber requisicao repassada por eles
@@ -139,12 +135,16 @@ class  noClusterStore:
         while True:
             dados = connection.recv(BUFFER_SIZE)
             if dados:
-                mensagem = json.loads(dados.decode())
+                try:
+                    mensagem = json.loads(dados.decode())
+                except:
+                    print("\n")
 
                 if self.primario: 
                     self.noPrimarioExecutandoRequisicao(mensagem)
                 else:
                     self.noBackupExecutandoAtualizacao(mensagem)
+
 
     def noBackupExecutandoAtualizacao(self, atualizacao):
         # recebe do no primario atualizacao a ser feita
@@ -153,32 +153,41 @@ class  noClusterStore:
         # retorna ao no primario um reconhecimento da atualizacao
         self.no_primario_socket.sendall(json.dumps("atualização concluída").encode())
 
+        with self.esperar_resposta:
+            self.esperar_resposta.notify()
+
     # no primario executando a requisicao e enviando a atualizacao aos nos de backup
     def noPrimarioExecutandoRequisicao(self, mensagem):
-        # executando a requisicao de escrita
-        self.armazenamento = mensagem
+        if(not "atualização concluída" in mensagem):
+            # executando a requisicao de escrita
+            self.armazenamento = mensagem
+            print("Escrita realizada no nó primário")
 
-        # manda a atualização para os nos de backup
-        # recebe o retorno de reconhecimento da atualizacao dos nos de backup
-        self.conn_backup1.sendall(json.dumps(self.armazenamento).encode())
-        retorno1 = self.conn_backup1.recv(BUFFER_SIZE).decode()
-        retorno1 = json.loads(retorno1)
-
-        self.conn_backup2.sendall(json.dumps(self.armazenamento).encode())
-        retorno2 = self.conn_backup2.recv(BUFFER_SIZE).decode()
-        retorno2 = json.loads(retorno2)
+            # manda a atualização para os nos de backup
+            # recebe o retorno de reconhecimento da atualizacao dos nos de backup
+            self.conn_backup1.sendall(json.dumps(self.armazenamento).encode())
+            self.conn_backup2.sendall(json.dumps(self.armazenamento).encode())
         
-        if(retorno1 == "atualização concluída" and retorno2 == "atualização concluída"):
-            print("ok")
         else:
-            print("Erro na atualização de um nó backup!")
+            print("Atualização realizada no backup")
 
+    def exibir_armazenamento(self):
+        while True:
+            time.sleep(5)
+            print(self.armazenamento)
+
+    
     def executar_no(self):
         self.estabeleceConexoesDoCluster()
 
         threading.Thread(target=self.escutaClusterSync, daemon=True).start()
 
+        if self.primario:
+            threading.Thread(target=self.exibir_armazenamento, daemon=True).start()
+
         self.escutaClusterStore()
+
+        
 
 if __name__ == "__main__":
     import sys

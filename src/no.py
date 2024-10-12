@@ -21,10 +21,14 @@ class ClusterSync_ClusterStore:
     def __init__(self, host, porta):
         self.host = host  # host do no do cluster store
         self.porta = porta # porta do no do cluster store
-        self.socket_cSync_cStore = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket_cSync_cStore = None
 
     def iniciar_conexao(self):
+        # Verifica se o socket é None, recria-o se necessário
+        if self.socket_cSync_cStore is None:
+            self.socket_cSync_cStore = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket_cSync_cStore.connect((self.host, self.porta))
+
 
     def enviar_mensagem(self, mensagem):
         self.socket_cSync_cStore.sendall(json.dumps(mensagem).encode())
@@ -33,9 +37,10 @@ class ClusterSync_ClusterStore:
         dados = self.socket_cSync_cStore.recv(BUFFER_SIZE)
         mensagem = json.loads(dados.decode())
         #print(mensagem["status"])
-    
+
     def finalizar_conexao(self) :
         self.socket_cSync_cStore.close()
+        self.socket_cSync_cStore = None
 
 class ClusterStore:
     def __init__(self, lista_endrecos):
@@ -45,13 +50,9 @@ class ClusterStore:
         selecionado = random.randint(0, len(self.cluster_store) - 1)
         cluster = self.cluster_store[selecionado]
 
-        print("\tIniciando Conexao com o cluster store", selecionado)
         cluster.iniciar_conexao()
-        print("\tEnviando Mensagem")
         cluster.enviar_mensagem(mensagem)
-        print("\tEserando retorno")
         cluster.esperar_retorno()
-        print("\tFinalziando Conexão")
         cluster.finalizar_conexao()
 
 
@@ -137,7 +138,7 @@ class No:
 
                 conn.sendall(json.dumps({"status": "commited"}).encode())                    
 
-                if self.timestamp_cliente != None and self.queda == 1:
+                if self.queda == 1:
                     self.cair()
 
     # Realiza o bind para permitir que o no anterior possa se conectar
@@ -175,8 +176,6 @@ class No:
         anterior_anterior_th = threading.Thread(target=self.aceitar_conexoes_anterior_anterior)
         anterior_anterior_th.start()
 
-        # anterior_th.join()
-        # anterior_anterior_th.join()
 
     # Escreve no token o timestamp do cliente, caso tenha informacoes, ou nulo, caso contrario
     def escrever_no_token(self):
@@ -195,14 +194,13 @@ class No:
             except:
                 self.no_proximo_conectado = False
                 self.token[(self.id_no + 1) % self.num_de_nos] = None
-                print("Não foi possivel mandar mensagem para o nó proximo")
 
         if self.no_proximo_proximo_conectado:
             try:
                 self.no_proximo_proximo_socket.sendall(json.dumps(self.token).encode())
             except:
                 self.no_proximo_proximo_conectado = False 
-                print("Não foi possivel mandar mensagem para o nó proximo proximo")           
+                self.token[(self.id_no + 2) % self.num_de_nos] = None
 
     # Fica esperando o no anterior enviar o token e atualiza o local com os novos valores
     def esperar_token_anterior(self, espera: EsperaToken):
@@ -215,9 +213,9 @@ class No:
                     espera.recebeu_resposta = True
                     return
             except:
-                break
-        espera.recebeu_resposta = False
-        espera.anterior_conectado = False
+                espera.recebeu_resposta = False
+                espera.anterior_conectado = False
+                return
 
     def esperar_token(self):
         # Informações a serem passadas por referencia
@@ -231,24 +229,21 @@ class No:
         t_anterior_anterior.start()
         
         t_anterior.join(5) 
-        t_anterior_anterior.join(5)
+        t_anterior_anterior.join(3)
 
-        # Atualiza as flags de conexão
-        self.no_anterior_conectado = anterior.anterior_conectado
-        self.no_anterior_anterior_conectado = anterior_anterior.anterior_conectado
+        if self.rodadaPassandoToken != 1 and (self.id_no == 1 or self.id_no == 0):
+            # Atualiza as flags de conexão
+            self.no_anterior_conectado = anterior.anterior_conectado
+            self.no_anterior_anterior_conectado = anterior_anterior.anterior_conectado
 
         # Verifica se recebeu o token do nó anterior
         if anterior.recebeu_resposta:
             self.token = anterior.token
-            print("Recebeu token do anterior")
 
         elif anterior_anterior.recebeu_resposta:
             self.token = anterior_anterior.token
             # Remove o timestamp do token anterior, pois era o menor e bloqueia o acesso a regiao critica
             self.token[(self.id_no - 1) % self.num_de_nos] = None
-            print("Recebeu token do anterior anterior")
-        else:
-            print("Não recebeu token")
 
             
     # Verifica se pode ou nao acessar a regiao critica
@@ -285,9 +280,12 @@ class No:
         print(f"Nó {self.id_no} saiu da seção crítica.")
 
     def executar_no(self):
+        self.rodadaPassandoToken = 1
+
         self.bind_para_no_anterior()
         time.sleep(1)
         threading.Thread(target=self.aceitar_conexoes).start()
+
         self.conectar_ao_no_proximo()
         time.sleep(2)
 
@@ -309,6 +307,8 @@ class No:
                     self.cair()
             
             self.enviar_para_proximo() # Envia o vetor para o proximo no
+
+            self.rodadaPassandoToken += 1
             
 if __name__ == "__main__":
     # import sys
