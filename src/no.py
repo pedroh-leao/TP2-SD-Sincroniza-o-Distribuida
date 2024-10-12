@@ -16,10 +16,51 @@ class EsperaToken:
         self.anterior_conectado = anterior_conectado # flag para indicar se esta ou nao conectado
         self.recebeu_resposta = False
 
+# faz a comunicacao de um no do clusterSync com um no do clusterStore
+class ClusterSync_ClusterStore:
+    def __init__(self, host, porta):
+        self.host = host  # host do no do cluster store
+        self.porta = porta # porta do no do cluster store
+        self.socket_cSync_cStore = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    def iniciar_conexao(self):
+        self.socket_cSync_cStore.connect((self.host, self.porta))
+
+    def enviar_mensagem(self, mensagem):
+        self.socket_cSync_cStore.sendall(json.dumps(mensagem).encode())
+
+    def esperar_retorno(self):
+        dados = self.socket_cSync_cStore.recv(BUFFER_SIZE)
+        mensagem = json.loads(dados.decode())
+        #print(mensagem["status"])
+    
+    def finalizar_conexao(self) :
+        self.socket_cSync_cStore.close()
+
+class ClusterStore:
+    def __init__(self, lista_endrecos):
+        self.cluster_store = [ClusterSync_ClusterStore(host, porta) for (host, porta) in lista_endrecos]
+    
+    def enviar_mensagem(self, mensagem):
+        selecionado = random.randint(0, len(self.cluster_store) - 1)
+        cluster = self.cluster_store[selecionado]
+
+        print("\tIniciando Conexao com o cluster store", selecionado)
+        cluster.iniciar_conexao()
+        print("\tEnviando Mensagem")
+        cluster.enviar_mensagem(mensagem)
+        print("\tEserando retorno")
+        cluster.esperar_retorno()
+        print("\tFinalziando Conexão")
+        cluster.finalizar_conexao()
+
+
 class No:
     incremento_proxima_proxima = 1000
 
-    def __init__(self, id_no, num_de_nos, host, porta_cliente, porta_no_atual, proximo_host, proxima_porta_no, proximo_proximo_host, queda) -> None:
+    def __init__(self, id_no, num_de_nos, host, porta_cliente, porta_no_atual, proximo_host, proxima_porta_no, proximo_proximo_host, queda) -> None:        
+        self.cluster_store = ClusterStore([("cluster0", 10000), ("cluster1", 10001), ("cluster2", 10002)])
+        
         self.id_no = id_no
         self.num_de_nos = num_de_nos
         self.host = host
@@ -189,8 +230,8 @@ class No:
         t_anterior.start()
         t_anterior_anterior.start()
         
-        t_anterior.join(2) 
-        t_anterior_anterior.join(2)
+        t_anterior.join(5) 
+        t_anterior_anterior.join(5)
 
         # Atualiza as flags de conexão
         self.no_anterior_conectado = anterior.anterior_conectado
@@ -199,11 +240,15 @@ class No:
         # Verifica se recebeu o token do nó anterior
         if anterior.recebeu_resposta:
             self.token = anterior.token
+            print("Recebeu token do anterior")
 
         elif anterior_anterior.recebeu_resposta:
             self.token = anterior_anterior.token
             # Remove o timestamp do token anterior, pois era o menor e bloqueia o acesso a regiao critica
             self.token[(self.id_no - 1) % self.num_de_nos] = None
+            print("Recebeu token do anterior anterior")
+        else:
+            print("Não recebeu token")
 
             
     # Verifica se pode ou nao acessar a regiao critica
@@ -221,8 +266,10 @@ class No:
     # Entra na regiao critica e executa o que deve executar. No caso, um sleep
     def entrar_regiao_critica(self):
         print(f"Nó {self.id_no} entrando na seção crítica...")
-        tempo = random.uniform(0.2, 1)
-        time.sleep(tempo)        
+
+        mensagem = f"Cluster Sync id: {self.id_no} - Timestamp do cliente: {self.timestamp_cliente}"        
+        self.cluster_store.enviar_mensagem(mensagem)
+        
         if self.queda == 3:
             self.cair()
 
@@ -242,7 +289,7 @@ class No:
         time.sleep(1)
         threading.Thread(target=self.aceitar_conexoes).start()
         self.conectar_ao_no_proximo()
-        time.sleep(1)
+        time.sleep(2)
 
         # O primeiro no inicia o processo de escrever no vetor (token) vazio do anel e passar ao proximo no
         if self.id_no == 0:
@@ -254,6 +301,7 @@ class No:
 
             if self.verificar_regiao_critica():
                 self.entrar_regiao_critica()
+                self.sair_da_regiao_critica()
 
             else:
                 self.escrever_no_token() # Escreve no vetor
@@ -262,8 +310,6 @@ class No:
             
             self.enviar_para_proximo() # Envia o vetor para o proximo no
             
-
-
 if __name__ == "__main__":
     # import sys
     # if len(sys.argv) != 9:

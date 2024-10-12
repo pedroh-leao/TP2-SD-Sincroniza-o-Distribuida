@@ -27,6 +27,7 @@ import threading
 import socket
 from constants import * 
 import json
+import time
 
 class  noClusterStore:
     def __init__(self, id, host, portaRequisicao, porta1 = None, porta2 = None, porta_no_primario = None, host_no_primario = None):
@@ -36,7 +37,7 @@ class  noClusterStore:
         self.primario = True if id == 0 else False # representa se o no eh um no primario do cluster store ou um no de backup
         self.armazenamento = ""
 
-        if self.pimario:
+        if self.primario:
             self.porta1 = porta1 # porta com qual um dos nos de backup do cluster store fara conexao
             self.porta2 = porta2 # porta com qual um dos nos de backup do cluster store fara conexao
             self.conn_backup1 = None
@@ -56,7 +57,7 @@ class  noClusterStore:
         self.mutex = threading.Lock()
             
 
-    def estabeleConexoesDoCluster(self):
+    def estabeleceConexoesDoCluster(self):
         if self.primario:
             conexaoPrimarioBackup1 = threading.Thread(target=self.noPrimarioConexaoBackup1, daemon=True)
             conexaoPrimarioBackup2 = threading.Thread(target=self.noPrimarioConexaoBackup2, daemon=True)
@@ -68,11 +69,13 @@ class  noClusterStore:
             conexaoPrimarioBackup2.join()
             
         else:
+            time.sleep(1)
+            print(self.host_no_primario, self.porta_no_primario)
             self.no_primario_socket.connect((self.host_no_primario, self.porta_no_primario))
 
     # no primario estabelecendo conexao com o primeiro no de backup
     def noPrimarioConexaoBackup1(self):
-        self.no_backup1_socket.bind((self.host, self.porta))
+        self.no_backup1_socket.bind((self.host, self.porta1))
         self.no_backup1_socket.listen()
         self.conn_backup1, _ = self.no_backup1_socket.accept()
 
@@ -84,11 +87,10 @@ class  noClusterStore:
 
     # executando em uma thread separada
     def escutaClusterSync(self):
+        self.no_clusterSync_socket.bind((self.host, self.portaRequisicao))
+        self.no_clusterSync_socket.listen()
         while True:
-            # Fazendo o binding
-            self.no_clusterSync_socket.bind((self.host, self.portaRequisicao))
-            self.no_clusterSync_socket.listen()
-
+            
             conn, addr = self.no_clusterSync_socket.accept()
         
             with conn:
@@ -120,8 +122,14 @@ class  noClusterStore:
     # fica escutando o no primario caso eu seja um no backup, para receber uma atualizacao vinda dele
     def escutaClusterStore(self):
         if self.primario:
-            threading.Thread(target=self.noEsperandoRequisicaoAtualizacao, args=(self.conn_backup1,), daemon=True).start()
-            threading.Thread(target=self.noEsperandoRequisicaoAtualizacao, args=(self.conn_backup2,), daemon=True).start()
+            atualizacao_1 = threading.Thread(target=self.noEsperandoRequisicaoAtualizacao, args=(self.conn_backup1,), daemon=True)
+            atualizacao_2 = threading.Thread(target=self.noEsperandoRequisicaoAtualizacao, args=(self.conn_backup2,), daemon=True)
+
+            atualizacao_1.start()
+            atualizacao_2.start()
+
+            atualizacao_1.join()
+            atualizacao_2.join()
 
         else:
             self.noEsperandoRequisicaoAtualizacao(self.no_primario_socket)
@@ -130,12 +138,13 @@ class  noClusterStore:
     def noEsperandoRequisicaoAtualizacao(self, connection):
         while True:
             dados = connection.recv(BUFFER_SIZE)
-            mensagem = json.loads(dados.decode())
+            if dados:
+                mensagem = json.loads(dados.decode())
 
-            if self.primario: 
-                self.noPrimarioExecutandoRequisicao(mensagem)
-            else:
-                self.noBackupExecutandoAtualizacao(mensagem)
+                if self.primario: 
+                    self.noPrimarioExecutandoRequisicao(mensagem)
+                else:
+                    self.noBackupExecutandoAtualizacao(mensagem)
 
     def noBackupExecutandoAtualizacao(self, atualizacao):
         # recebe do no primario atualizacao a ser feita
@@ -165,7 +174,7 @@ class  noClusterStore:
             print("Erro na atualização de um nó backup!")
 
     def executar_no(self):
-        self.estabeleConexoesDoCluster()
+        self.estabeleceConexoesDoCluster()
 
         threading.Thread(target=self.escutaClusterSync, daemon=True).start()
 
@@ -173,7 +182,7 @@ class  noClusterStore:
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) != 5 and len(sys.argv) != 7:
+    if len(sys.argv) != 6 and len(sys.argv) != 8:
         print("Uso: python3 noClusterStore.py <id_no> <host> <porta_para_requisicao_do_cluster_sync> <porta_para_conexao_backup1> <porta_para_conexao_backup2>"
               +"\nou\n"+
               "Uso: python3 noClusterStore.py <id_no> <host> <porta_para_requisicao_do_cluster_sync> 0 0 <porta_do_no_primario> <host_do_no_primario>")
