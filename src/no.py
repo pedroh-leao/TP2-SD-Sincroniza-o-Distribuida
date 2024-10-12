@@ -91,13 +91,13 @@ class No:
                 timestamp = mensagem.get('timestamp')
                 self.timestamp_cliente = timestamp
 
-                if self.timestamp_cliente != None and self.queda == 1:
-                    self.cair()
-
                 with self.esperar_resposta:
                     self.esperar_resposta.wait() # Bloqueando a thread, esperando o no sair da regiao critica
 
                 conn.sendall(json.dumps({"status": "commited"}).encode())                    
+
+                if self.timestamp_cliente != None and self.queda == 1:
+                    self.cair()
 
     # Realiza o bind para permitir que o no anterior possa se conectar
     def bind_para_no_anterior(self):
@@ -168,7 +168,6 @@ class No:
         dados = ''
         while espera.anterior_conectado: 
             try:
-                # Aqui está o problema, deve-se tentar receber os dados diretamente
                 dados = espera.conexao.recv(BUFFER_SIZE)
                 if dados:
                     espera.token = json.loads(dados.decode())
@@ -180,6 +179,7 @@ class No:
         espera.anterior_conectado = False
 
     def esperar_token(self):
+        # Informações a serem passadas por referencia
         anterior = EsperaToken(self.conn_anterior, self.no_anterior_conectado)
         anterior_anterior = EsperaToken(self.conn_anterior_anterior, self.no_anterior_anterior_conectado)
 
@@ -199,15 +199,12 @@ class No:
         # Verifica se recebeu o token do nó anterior
         if anterior.recebeu_resposta:
             self.token = anterior.token
-            #print(f"Token recebido do nó anterior {(self.id_no - 1) % self.num_de_nos} {anterior.token}")
 
         elif anterior_anterior.recebeu_resposta:
             self.token = anterior_anterior.token
+            # Remove o timestamp do token anterior, pois era o menor e bloqueia o acesso a regiao critica
             self.token[(self.id_no - 1) % self.num_de_nos] = None
-            #print(f"Token recebido do nó anterior anterior {(self.id_no - 2) % self.num_de_nos}")
 
-        else:
-            print(f"Nenhuma mensagem recebida, nó {self.id_no} continua esperando ou reconfigurando fluxo.")
             
     # Verifica se pode ou nao acessar a regiao critica
     def verificar_regiao_critica(self):
@@ -261,11 +258,11 @@ class No:
 
             else:
                 self.escrever_no_token() # Escreve no vetor
+                if self.queda == 2:
+                    self.cair()
             
             self.enviar_para_proximo() # Envia o vetor para o proximo no
             
-            if self.queda == 2:
-                self.cair()
 
 
 if __name__ == "__main__":
