@@ -254,7 +254,6 @@ class No:
 
             if self.verificar_regiao_critica():
                 self.entrar_regiao_critica()
-                self.sair_da_regiao_critica()
 
             else:
                 self.escrever_no_token() # Escreve no vetor
