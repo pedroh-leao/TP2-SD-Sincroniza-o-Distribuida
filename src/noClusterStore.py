@@ -32,7 +32,7 @@ class  noClusterStore:
         self.host = host
         self.portaRequisicao = portaRequisicao # porta para receber requisicoes do cluster sync
         self.primario = True if id == 0 else False # representa se o no eh um no primario do cluster store ou um no de backup
-        self.armazenamento = ""
+        self.armazenamento = []
 
         if self.primario:
             self.porta1 = porta1 # porta com qual um dos nos de backup do cluster store fara conexao
@@ -160,7 +160,7 @@ class  noClusterStore:
     def noPrimarioExecutandoRequisicao(self, mensagem):
         if(not "atualização concluída" in mensagem):
             # executando a requisicao de escrita
-            self.armazenamento = mensagem
+            self.armazenamento.append(mensagem)
             print("Escrita realizada no nó primário")
 
             # manda a atualização para os nos de backup
